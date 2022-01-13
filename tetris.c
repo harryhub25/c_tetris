@@ -88,6 +88,7 @@ int main()
     c_begin = clock();
 
     int flag = 1;
+    int rot_flag = 0;
     tetromino = Next_Tetromino();
 
     while(1)
@@ -98,38 +99,52 @@ int main()
                 flag = 0;
         }
 
+        if(rot_flag)    rot_flag = 0;
+
         if (kbhit()) {
 
             ch = getch(); 
             
             if (ch == 27)  break;
             else{
-                     if(ch == 72)    { rotation++;  rotation %= 4; } //72 (up), 80 (down), 75 (left) and 77 (right). 32(drop)
+                if(ch == 72)    { 
+                         
+                         rotation++;  rotation %= 4; 
+                         
+                         hit  = LHit(coord_x, coord_y, rotation, tetromino); if(hit & 0x2) coord_x += ((hit >> 4) & 0xf);
+                         hit |= RHit(coord_x, coord_y, rotation, tetromino); if(hit & 0x4) coord_x -= ((hit >> 4) & 0xf);
+
+                         rot_flag = 1;
+
+                } //72 (up), 80 (down), 75 (left) and 77 (right). 32(drop)
                 else if(ch == 75)    { coord_x -= 1; hit = LHit(coord_x, coord_y, rotation, tetromino); }
                 else if(ch == 77)    { coord_x += 1; hit = RHit(coord_x, coord_y, rotation, tetromino); } 
                 else if(ch == 32)    { drop_flag= 1; } 
             }
         }
 
-        if(hit & 0x2) coord_x += 1;
-        if(hit & 0x4) coord_x -= 1; 
+        if(rot_flag != 1)
+        {
+            if(hit & 0x2) coord_x += ((hit >> 4) & 0xf);
+            if(hit & 0x4) coord_x -= ((hit >> 4) & 0xf);
+        }
 
         hit = BHit(coord_x, coord_y, rotation, tetromino);
         
-        if(hit & 0x1) coord_y -= 1;
+        if(hit & 0x100) coord_y -= 1;
 
-        if(hit & 0x8) break;
+        if(hit & 0x800) break;
 
         Tetromino(coord_x , coord_y, rotation, tetromino);
 
         c_end = clock();
 
-        if( (c_end-c_begin) >= INTERVAL || coord_y >= HEIGHT || (hit & 0x1) || drop_flag) 
+        if( (c_end-c_begin) >= INTERVAL || coord_y >= HEIGHT || (hit & 0x100) || drop_flag) 
         {
 
             c_begin = clock();
 
-            if( (hit & 0x1) || coord_y >= HEIGHT) // y+3 >= HEIGHT) 
+            if( (hit & 0x100) || coord_y >= HEIGHT) // y+3 >= HEIGHT) 
             {
                 flag=1;
                 coord_x  = WIDTH/2;
@@ -138,7 +153,7 @@ int main()
                 drop_flag = 0; 
             }   
             else{
-                coord_y ++;
+                coord_y++;
             }
   
         }
@@ -239,16 +254,26 @@ int LHit(int base_x, int base_y, int rotation, int tetromino)
         {
             if(blk[tetromino][Rotate(x_scan, y_scan, rotation, tetromino)])
             {
-                if(stack[base_x+x_scan][base_y+y_scan] || base_x+x_scan == 0) 
-                {   hit |= 0x2;
+                if(base_x+x_scan >= 0)
+                {
+                    if(stack[base_x+x_scan][base_y+y_scan]) 
+                    {   hit |= 0x12;
+                        break;
+                    }
+                }
+                else
+                {
+                    hit |= (abs(base_x) + 1) << 4 & 0xf0;   
+                    hit |= 0x2;
                     break;
                 }
+
             }
         }
         if(hit) break;
     }
 
-    if(hit & 0x1) BlkSave(base_x, base_y, rotation, tetromino);
+    if(hit & 0x100) BlkSave(base_x, base_y, rotation, tetromino);
 
     HitInfo(base_x, base_y, rotation, tetromino, hit, blk_size);
 
@@ -270,17 +295,24 @@ int RHit(int base_x, int base_y, int rotation, int tetromino)
         {
             if(blk[tetromino][Rotate(x_scan, y_scan, rotation, tetromino)])
             {
-                if(stack[base_x+x_scan][base_y+y_scan]) 
+                if(base_x+x_scan <= WIDTH+1)
+                {      
+                    if(stack[base_x+x_scan][base_y+y_scan]) 
+                    {
+                        hit |= 0x14;
+                        break;
+                    }
+                }else
                 {
-                    hit |= 0x4;
-                    break;
+                        hit |= (((base_x+x_scan - (WIDTH)) << 4 ) & 0xf0 ) | 0x4;    
+                        break;                 
                 }
             }
         }
        if(hit) break;
     }
 
-    if(hit & 0x1) BlkSave(base_x, base_y, rotation, tetromino);
+    if(hit & 0x100) BlkSave(base_x, base_y, rotation, tetromino);
 
     HitInfo(base_x, base_y, rotation, tetromino, hit, blk_size);
 
@@ -304,8 +336,8 @@ int BHit(int base_x, int base_y, int rotation, int tetromino)
                     {
                         if(base_x + x_scan > 0 && base_x + x_scan <= WIDTH)
                         {
-                            if(base_y+y_scan ==      0) hit  = 0x8;
-                            if(base_y+y_scan > 0 &&  base_y+y_scan<=HEIGHT) hit |= 0x1;
+                            if(base_y+y_scan ==      0) hit  = 0x800;
+                            if(base_y+y_scan > 0 &&  base_y+y_scan<=HEIGHT) hit |= 0x100;
                         }
                         break;
                     }
@@ -413,20 +445,23 @@ void Tetromino(int x, int y, int rotation, int tetromino)
     {  
         if(row_cnt[y_sweep] != WIDTH)
         { 
+            if(y_flag)
+            {
+                PlaySound(TEXT("Vanish.wav"), NULL, SND_ASYNC);
+            }
+
             for(int x_sweep = 1; x_sweep <= WIDTH; x_sweep++)
             {
                 stack[x_sweep][y_shift] = stack[x_sweep][y_sweep];
 
             }
             y_shift--;
-            y_flag = 1;
+            y_flag = 0;
         }
         else
         {
-            if(y_flag)
-            //PlaySound(TEXT("Vanish.wav"), NULL, SND_ASYNC);
+            y_flag = 1;
             score++; score/(WIDTH-1);
-            y_flag = 0;
         }
     }
 
